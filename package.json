@@ -2,10 +2,26 @@
   "name": "sketch",
   "private": true,
   "type": "module",
+  "description": "draws.ink: type what you want drawn and watch a pen draw it.",
+  "packageManager": "pnpm@11.24.0",
   "scripts": {
     "setup": "uv venv .venv && uv pip install --python .venv/bin/python vpype scikit-image pillow && pnpm build",
     "build": "cd render && go build -o ../bin/render .",
     "start": "node server.mjs",
-    "dev": "pnpm build && SKETCH_LAB=1 node server.mjs"
+    "dev": "pnpm build && SKETCH_LAB=1 node server.mjs",
+    "dev:worker": "wrangler dev",
+    "test": "node --test test/",
+    "check": "node --check server.mjs && node --check shared.mjs && node --check src/worker.js && pnpm run test && wrangler deploy --dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.3.7"
+  },
+  "devDependencies": {
+    "wrangler": "^4.147.0"
   }
 }

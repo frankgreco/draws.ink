@@ -3,5 +3,9 @@ bin/
 out/
 node_modules/
 .dev.vars
+.prod.vars
+.wrangler/
+*.log
+.DS_Store
 render/gen/
 __pycache__/

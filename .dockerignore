@@ -1,0 +1,10 @@
+# Only what the image needs goes into the build: no secrets, no outputs.
+*
+!package.json
+!requirements.txt
+!server.mjs
+!shared.mjs
+!trace.py
+!public
+public/lab.html
+public/designs

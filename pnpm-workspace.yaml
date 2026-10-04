@@ -1,0 +1,5 @@
+# pnpm settings. Build scripts are blocked by default; these two need theirs
+# (they download the esbuild and workerd binaries). Nothing else runs scripts.
+allowBuilds:
+  esbuild: true
+  workerd: true

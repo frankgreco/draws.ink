@@ -1,0 +1,23 @@
+# The tracer's libraries and vpype, pinned to the versions the drawings were
+# tuned with. Installed into the container image (see Dockerfile).
+asteval==1.0.10
+cachetools==7.2.0
+click==8.5.0
+dill==0.4.1
+imageio==2.38.0
+lazy-loader==0.6
+multiprocess==0.70.19
+networkx==3.7
+numpy==2.5.3
+packaging==26.3
+pillow==12.3.0
+pnoise==0.2.0
+pyphen==0.15.0
+scikit-image==0.26.0
+scipy==1.18.1
+shapely==2.1.2
+svgelements==1.9.6
+svgwrite==1.4.3
+tifffile==2026.9.20
+tomli==2.4.1
+vpype==1.15.0

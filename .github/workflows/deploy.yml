@@ -1,0 +1,66 @@
+# Deploys to Cloudflare on every push to main (and on demand). Pull requests run
+# check.yml instead. The application secret lives in GitHub Actions secrets and is
+# pushed into the Worker on each deploy, so this repo plus GitHub is the whole system.
+#
+# Required repository secrets:
+#   CLOUDFLARE_API_TOKEN   (Workers Scripts:Edit, Containers:Edit, Account Settings:Read)
+#   CLOUDFLARE_ACCOUNT_ID
+#   OPENROUTER_API_KEY     (pays for the image model)
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Test, build, deploy
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # version comes from "packageManager" in package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm test
+
+      - name: Write Worker secrets
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          node -e '
+            if (!process.env.OPENROUTER_API_KEY) { console.error("Missing required secret: OPENROUTER_API_KEY"); process.exit(1); }
+            require("fs").writeFileSync("secrets.json", JSON.stringify({ OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY }));
+          '
+
+      # Uploads the Worker and the page, builds the container image with the
+      # runner's Docker (amd64, as Cloudflare needs) and rolls it out. The
+      # secrets go up with the same version, so the container starts with them.
+      - name: Deploy Worker and container
+        run: |
+          pnpm exec wrangler deploy --secrets-file secrets.json
+          rm -f secrets.json
+
+      - name: Smoke test
+        run: curl --fail --silent --show-error --retry 6 --retry-delay 10 --retry-all-errors "https://draws.ink/api/health"

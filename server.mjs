@@ -13,6 +13,11 @@
 //   SKETCH_IP_DAILY      drawings per visitor per day (default 25)
 //   SKETCH_DAILY_CAP     drawings per day for everyone together (default 500)
 //   SKETCH_CONCURRENCY   drawings in progress at once (default 4)
+//   SKETCH_GATED=1       something in front counts each visitor's drawings and
+//                        the day's total, so only the cap on drawings in
+//                        progress applies here. The Cloudflare deployment sets
+//                        it: src/worker.js keeps those counts in storage that
+//                        outlives this process.
 //   SKETCH_LAB=1         development only: adds /lab, where the model and the
 //                        older 3D modes (a language model writes a scene, ln
 //                        renders it) can be chosen, and switches the limits
@@ -27,19 +32,15 @@ import { createGzip, gzipSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SECURITY_HEADERS, MAX_PROMPT, WINDOW_MS, DAY_MS, MESSAGES, limitsFrom, refusal, decide } from "./shared.mjs";
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 5177);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const LAB = process.env.SKETCH_LAB === "1";
 const TRUST_PROXY = process.env.TRUST_PROXY === "1";
-const LIMITS = {
-  perVisitor: Number(process.env.SKETCH_IP_LIMIT ?? 5),
-  perVisitorDaily: Number(process.env.SKETCH_IP_DAILY ?? 25),
-  daily: Number(process.env.SKETCH_DAILY_CAP ?? 500),
-  concurrent: Number(process.env.SKETCH_CONCURRENCY ?? 4),
-};
-const MAX_PROMPT = 200;
+const GATED = process.env.SKETCH_GATED === "1";
+const LIMITS = limitsFrom(process.env);
 const MAX_STROKES = 7000;   // more than this and the picture was not line art
 // Scene models, compared on six prompts: Sol drew the most detailed scenes, Opus was faster.
 const MODELS = ["openai/gpt-6.1-sol", "anthropic/claude-opus-5.5"];
@@ -67,22 +68,12 @@ const TRACE_SCRIPT = join(ROOT, "trace.py");
 const SANDBOX_PROFILE = join(ROOT, "sandbox.sb");
 const MAX_ATTEMPTS = 3;
 
-// The OpenRouter key lives in buildingtea's .dev.vars under OPENAI_API_KEY.
+// Locally the OpenRouter key comes from .dev.vars, which is not committed.
 function loadApiKey() {
   if (process.env.OPENROUTER_API_KEY) return process.env.OPENROUTER_API_KEY;
-  for (const file of [join(ROOT, ".dev.vars"), join(ROOT, "..", "buildingtea", ".dev.vars")]) {
-    if (!existsSync(file)) continue;
-    const vars = Object.fromEntries(
-      readFileSync(file, "utf8")
-        .split("\n")
-        .map((line) => line.match(/^\s*([A-Z0-9_]+)\s*=\s*["']?(.*?)["']?\s*$/))
-        .filter(Boolean)
-        .map((m) => [m[1], m[2]]),
-    );
-    const key = vars.OPENROUTER_API_KEY ?? vars.OPENAI_API_KEY;
-    if (key) return key;
-  }
-  return null;
+  const file = join(ROOT, ".dev.vars");
+  if (!existsSync(file)) return null;
+  return readFileSync(file, "utf8").match(/^\s*OPENROUTER_API_KEY\s*=\s*["']?(.*?)["']?\s*$/m)?.[1] || null;
 }
 const API_KEY = loadApiKey();
 
@@ -131,7 +122,9 @@ ${ADVICE}
 - 20 to 150 shapes is normal. At most 400.
 - Output raw JSON only: no markdown fence, no comments, no trailing commas.`;
 
-const EXAMPLES = ["lamp", "owl"]
+// Only the lab's 3D code mode shows these to a model; a public server runs
+// without the render directory.
+const EXAMPLES = !LAB ? "" : ["lamp", "owl"]
   .map((name) => readFileSync(join(RENDER_DIR, "examples", name, "main.go"), "utf8").trim())
   .join("\n\n----\n\n");
 
@@ -523,12 +516,6 @@ async function sketch(prompt, mode, model, revise, progress, full = true, aspect
 
 // ------------------------------------------------------------------ HTTP
 
-const SECURITY_HEADERS = {
-  "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "DENY",
-  "Referrer-Policy": "no-referrer",
-  "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
-};
 // The lab page keeps its script and styles inline.
 const LAB_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'";
 
@@ -576,40 +563,23 @@ function sendJson(res, status, body, headers = {}) {
   res.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store", ...headers }).end(JSON.stringify(body));
 }
 
-// What visitors are told. Details of a failure stay in the server log.
-const wait = (seconds) => (seconds < 90 ? "a minute" : seconds < 5400 ? `${Math.round(seconds / 60)} minutes` : `${Math.round(seconds / 3600)} hours`);
-const MESSAGES = {
-  bad_prompt: () => `Tell us what to draw, in up to ${MAX_PROMPT} characters.`,
-  rate_limited: (seconds) => `You've reached the drawing limit for now. Try again in ${wait(seconds)}.`,
-  closed: () => "We've reached today's drawing limit. Come back tomorrow.",
-  busy: () => "Lots of people are drawing right now. Try again in a moment.",
-  unavailable: () => "Drawing isn't available right now. Please try again later.",
-  failed: () => "We couldn't draw that one. Try describing it a little differently.",
-};
 function refuse(res, status, code, retryAfter) {
-  sendJson(res, status, { error: { code, message: MESSAGES[code](retryAfter) } }, retryAfter ? { "Retry-After": String(retryAfter) } : {});
+  sendJson(res, status, refusal(code, retryAfter), retryAfter ? { "Retry-After": String(retryAfter) } : {});
 }
 
-// Every drawing costs money, so visitors are limited: a few per ten minutes
-// and per day each, a daily total for everyone, and a cap on how many are in
-// progress at once. Kept in memory, so it resets on restart and assumes one
-// server process.
-const WINDOW_MS = 10 * 60_000;
-const DAY_MS = 24 * 60 * 60_000;
+// The limits of shared.mjs, counted in memory: they reset on restart and
+// assume one server process.
 const visitors = new Map();   // address -> times of that visitor's drawings in the last day
 let everyone = [];            // times of all drawings in the last day
 let inProgress = 0;
 
 function admit(address, now = Date.now()) {
+  if (GATED) return inProgress >= LIMITS.concurrent ? { status: 503, code: "busy", retryAfter: 10 } : null;
   const lastDay = (times) => times.filter((t) => now - t < DAY_MS);
   everyone = lastDay(everyone);
   const mine = lastDay(visitors.get(address) ?? []);
-  const recent = mine.filter((t) => now - t < WINDOW_MS);
-  const until = (t, span) => Math.ceil((t + span - now) / 1000);
-  if (recent.length >= LIMITS.perVisitor) return { status: 429, code: "rate_limited", retryAfter: until(recent[0], WINDOW_MS) };
-  if (mine.length >= LIMITS.perVisitorDaily) return { status: 429, code: "rate_limited", retryAfter: until(mine[0], DAY_MS) };
-  if (everyone.length >= LIMITS.daily) return { status: 503, code: "closed", retryAfter: until(everyone[0], DAY_MS) };
-  if (inProgress >= LIMITS.concurrent) return { status: 503, code: "busy", retryAfter: 10 };
+  const refused = decide({ mine, everyone: { count: everyone.length, oldest: everyone[0] }, inProgress, limits: LIMITS, now });
+  if (refused) return refused;
   visitors.set(address, [...mine, now]);
   everyone.push(now);
   return null;
@@ -656,7 +626,9 @@ async function handleSketch(req, res) {
     : (MODELS.includes(body.model) ? body.model : DEFAULT_MODEL);
 
   // Newline-delimited JSON: progress lines while working, then {result} or {error}.
-  const gzip = /\bgzip\b/.test(req.headers["accept-encoding"] ?? "");
+  // Behind the Worker the stream is left plain: compressed here, its progress
+  // lines are held back on the way out and all arrive with the result.
+  const gzip = !GATED && /\bgzip\b/.test(req.headers["accept-encoding"] ?? "");
   res.writeHead(200, {
     "Content-Type": "application/x-ndjson",
     "Cache-Control": "no-store",

@@ -1,0 +1,68 @@
+// draws.ink Worker configuration. This file IS the infrastructure definition:
+// the Worker, its static assets, the container that does the drawing, the
+// Durable Object in front of it, the rate limiter and the custom domains are
+// all declared here and applied by `wrangler deploy`. See README.md
+// "Deploying" for the one-time setup steps.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "draws-ink",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+
+  // The page. The Worker runs first on every request (so the host redirect and
+  // /api/* work), then hands other paths to the asset server.
+  // public/.assetsignore keeps the development-only pages out.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+
+  "vars": {
+    "CANONICAL_HOST": "draws.ink"
+    // Optional, to change the limits in shared.mjs: SKETCH_IP_LIMIT,
+    // SKETCH_IP_DAILY and SKETCH_DAILY_CAP are counted by the Worker.
+  },
+
+  // Secrets (set with `wrangler secret put NAME`, or in .dev.vars locally):
+  //   OPENROUTER_API_KEY (pays for the image model; handed to the container)
+
+  // server.mjs, trace.py and vpype, built from ./Dockerfile on every deploy.
+  // One instance: it sleeps five minutes after the last drawing (src/worker.js)
+  // and a request wakes it. Needs the Workers Paid plan.
+  "containers": [
+    {
+      "class_name": "Studio",
+      "image": "./Dockerfile",
+      "instance_type": "standard-2",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "STUDIO", "class_name": "Studio" }]
+  },
+  "exports": {
+    "Studio": { "type": "durable-object", "storage": "sqlite" }
+  },
+
+  // Per-visitor guard on the expensive endpoint, ahead of the limits in shared.mjs.
+  "ratelimits": [
+    {
+      "name": "DRAW_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "limit": 20, "period": 60 }
+    }
+  ],
+
+  // Local dev: wrangler otherwise presents the first route's host (draws.ink)
+  // on plain http, which the canonical-host redirect would 301 to production.
+  "dev": { "port": 8787, "host": "localhost:8787" },
+
+  // Both hosts point at this Worker; the Worker 301s www to CANONICAL_HOST.
+  "routes": [
+    { "pattern": "draws.ink", "custom_domain": true },
+    { "pattern": "www.draws.ink", "custom_domain": true }
+  ],
+
+  "observability": { "enabled": true }
+}
