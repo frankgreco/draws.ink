@@ -15,6 +15,11 @@ pen plotter.
 3. The page animates the strokes. Video and GIF are encoded in the browser
    (`public/export.js`), so downloads cost the server nothing.
 
+The image model's provider refuses some requests, most often one that names a real
+person. The server then asks a small model (`REWORD_MODEL` in `server.mjs`) to reword
+the request once, with a generic figure in place of the person, and the page says what
+was drawn instead. If that is refused too, the visitor is told it can't be drawn.
+
 Every drawing costs money (about $0.02 for the picture), so drawing is limited: five per
 visitor per ten minutes, 25 per visitor per day, 500 a day for everyone, four in progress
 at once. The numbers and the messages are in `shared.mjs`.
@@ -31,6 +36,8 @@ at once. The numbers and the messages are in `shared.mjs`.
 | `wrangler.jsonc` | The Cloudflare infrastructure: Worker, assets, container, domains |
 | `Dockerfile`, `requirements.txt` | The container image: Node, Python and the pinned libraries |
 | `test/` | Tests for the limits |
+| `public/logo.svg`, `public/og.png`, `public/og-square.png`, icons | The wordmark, the link-share images (wide and square) and the favicons |
+| `brand/og.svg`, `brand/og-square.svg` | Sources of the share images: `rsvg-convert -w 1200 -h 630 brand/og.svg -o public/og.png` |
 | `render/`, `eval.mjs`, `public/lab.html`, `public/designs/` | Development only: the older 3D modes, the comparison harness and the lab pages. Not deployed. |
 
 ## Local development

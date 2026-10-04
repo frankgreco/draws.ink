@@ -8,6 +8,7 @@ const PACE = { layer1: 1, layer2: 0.8, layer3: 0.45 };
 const STEPS = {
   picture: "Sketching your idea…",
   again: "Trying a fresh sheet…",
+  reword: "Finding another way to draw it…",
   trace: "Inking the lines…",
   order: "Picking up the pen…",
 };
@@ -15,7 +16,7 @@ const GENERIC = "Something went wrong. Please try again.";
 const EXAMPLE = "a lighthouse on a rocky island";
 const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-let current = null; // { svgText, prompt, width, height, strokes, pen, ink, total, seconds }
+let current = null; // { svgText, prompt, width, height, strokes, pen, ink, total, seconds, note }
 let frame = 0;
 let wobble = true; // switched off on devices that cannot keep up with it
 
@@ -178,6 +179,13 @@ function setStage(text) {
   $("status").textContent = text;
 }
 
+// The line under the sheet: what was drawn in place of a refused request, or
+// why a download failed.
+function setNote(text) {
+  $("note").textContent = text;
+  $("note").hidden = !text;
+}
+
 function showNotice(message) {
   cancelAnimationFrame(frame);
   current = null;
@@ -223,7 +231,7 @@ async function request(prompt, aspect) {
       }
     }
     if (!result?.svg) throw new Told(GENERIC);
-    return result.svg;
+    return result;
   } catch (err) {
     if (err instanceof Told) throw err;
     if (err.name === "AbortError") throw new Told("That took too long. Please try again.");
@@ -249,8 +257,12 @@ $("form").addEventListener("submit", async (e) => {
   setBusy(true);
   showWorking(aspect);
   try {
-    show(await request(prompt, aspect), prompt);
-    $("status").textContent = `Drawing ${prompt}.`;
+    const { svg, drew } = await request(prompt, aspect);
+    show(svg, drew ?? prompt);
+    // The image model would not draw the request as written; say what this is.
+    current.note = drew ? `We couldn't draw that as asked, so this is “${drew}”.` : "";
+    setNote(current.note);
+    $("status").textContent = current.note || `Drawing ${prompt}.`;
   } catch (err) {
     if (!(err instanceof Told)) console.error(err);
     showNotice(err instanceof Told ? err.message : GENERIC);
@@ -357,14 +369,15 @@ menu.addEventListener("click", async (e) => {
   closeMenu();
   exporting = button.disabled = true;
   button.textContent = $("status").textContent = busy;
-  $("note").hidden = true;
+  setNote("");
   try {
-    download(await make((done) => { button.textContent = `${busy} ${Math.round(done * 100)}%`; }), `sketch-${slug}.${format}`);
+    download(await make((done) => { button.textContent = `${busy} ${Math.round(done * 100)}%`; }), `draws-ink-${slug}.${format}`);
     $("status").textContent = "Downloaded.";
+    setNote(current?.note ?? "");
   } catch (err) {
     console.error(err);
-    $("note").textContent = $("status").textContent = failed ?? "That couldn't be saved. Please try again.";
-    $("note").hidden = false;
+    $("status").textContent = failed ?? "That couldn't be saved. Please try again.";
+    setNote($("status").textContent);
   } finally {
     exporting = button.disabled = false;
     button.textContent = "Download";

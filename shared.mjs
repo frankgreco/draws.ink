@@ -32,6 +32,7 @@ export const MESSAGES = {
   closed: () => "We've reached today's drawing limit. Come back tomorrow.",
   busy: () => "Lots of people are drawing right now. Try again in a moment.",
   unavailable: () => "Drawing isn't available right now. Please try again later.",
+  blocked: () => "That's not something we can draw. Try a different subject.",
   failed: () => "We couldn't draw that one. Try describing it a little differently.",
 };
 export const refusal = (code, retryAfter) => ({ error: { code, message: MESSAGES[code](retryAfter) } });

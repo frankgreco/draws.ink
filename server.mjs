@@ -1,4 +1,4 @@
-// Sketch server: a prompt goes in, pen strokes come out.
+// The draws.ink server: a prompt goes in, pen strokes come out.
 //
 // The public site has one page and one endpoint, POST /api/sketch
 // {prompt, aspect}. An image model draws the picture, trace.py turns it into
@@ -52,6 +52,8 @@ const IMAGE_MODELS = ["microsoft/mai-image-2.6-flash", "google/gemini-3.1-flash-
 // both; the image-only models refuse a request that mentions text.
 const speaks = (model) => /^(google|openai)\//.test(model);
 const DEFAULT_IMAGE_MODEL = process.env.SKETCH_IMAGE_MODEL ?? IMAGE_MODELS[0];
+// Rewords a request the image model's provider refused (see reword below).
+const REWORD_MODEL = process.env.SKETCH_REWORD_MODEL ?? "anthropic/claude-haiku-4.5";
 // The page shapes on offer: the ratio the image model is asked for, how the
 // prompt describes it, and the page the strokes are fitted to. The pages are
 // about the size of the model's pictures, so the pen weights suit all three.
@@ -248,7 +250,7 @@ async function chat(model, messages) {
     headers: {
       Authorization: `Bearer ${API_KEY}`,
       "Content-Type": "application/json",
-      "X-Title": "sketch prototype",
+      "X-Title": "draws.ink",
     },
     body: JSON.stringify({ model, messages, max_tokens: 32000, reasoning: { effort: "medium" } }),
   });
@@ -395,7 +397,7 @@ async function paint(model, prompt, aspect, timeoutMs) {
     headers: {
       Authorization: `Bearer ${API_KEY}`,
       "Content-Type": "application/json",
-      "X-Title": "sketch prototype",
+      "X-Title": "draws.ink",
     },
     body: JSON.stringify({
       model,
@@ -405,7 +407,14 @@ async function paint(model, prompt, aspect, timeoutMs) {
     }),
   });
   const body = await res.json().catch(() => null);
-  if (!res.ok) throw Object.assign(new Error(`OpenRouter ${res.status}: ${body?.error?.message ?? res.statusText}`), { upstream: res.status });
+  if (!res.ok) {
+    // A content filter answers 400 (the provider's) or 403 (OpenRouter's) and
+    // says so in the metadata. The same words would be refused again.
+    const meta = body?.error?.metadata;
+    const blocked = [400, 403].includes(res.status)
+      && /content|safety|moderat|policy|block/i.test([meta?.provider_error_code, meta?.raw, ...(meta?.reasons ?? [])].join(" "));
+    throw Object.assign(new Error(`OpenRouter ${res.status}: ${body?.error?.message ?? res.statusText}${blocked ? " (content refused)" : ""}`), { upstream: res.status, blocked });
+  }
   const message = body?.choices?.[0]?.message;
   const url = message?.images?.[0]?.image_url?.url;
   const data = url?.match(/^data:image\/[\w.+-]+;base64,(.+)$/s);
@@ -428,14 +437,50 @@ async function trace(bytes, page) {
   }
 }
 
+// Providers refuse some requests, most often one that names a real person.
+// A small model rewords such a request once, so there is still something to
+// draw, and the visitor is told what was drawn instead.
+const REWORD_PROMPT = `An image generator refused to draw a request, most likely because it names a real person, or a brand or character it will not depict.
+
+Reword the request so that it can be drawn:
+- Replace a real, named person with a plain generic figure, such as "a man", "a woman" or "a singer". Do not describe that person's looks, clothes or anything else that would make the figure recognisable as them.
+- Replace a brand, a logo or a trademarked character with a generic equivalent.
+- Keep everything else the request asks for.
+
+Reply with the reworded request only: one short phrase, no quotes, no explanation. If the request is sexual, hateful or graphically violent, or nothing acceptable is left to draw, reply with exactly NO.`;
+
+async function reword(prompt) {
+  const refuse = (why) => Object.assign(new Error(`the request was refused and could not be reworded: ${why}`), { code: "blocked" });
+  let body;
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      signal: AbortSignal.timeout(15_000),
+      headers: { Authorization: `Bearer ${API_KEY}`, "Content-Type": "application/json", "X-Title": "draws.ink" },
+      body: JSON.stringify({ model: REWORD_MODEL, max_tokens: 80, messages: [{ role: "system", content: REWORD_PROMPT }, { role: "user", content: prompt }] }),
+    });
+    body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${body?.error?.message ?? res.statusText}`);
+  } catch (err) {
+    throw refuse(err.message);
+  }
+  const text = String(body?.choices?.[0]?.message?.content ?? "").replace(/\s+/g, " ").trim().replace(/^["'“‘]+|["'”’.]+$/g, "");
+  if (!text || /^no$/i.test(text) || text.length > MAX_PROMPT) throw refuse(text ? "the model declined" : "empty reply");
+  if (text.toLowerCase() === prompt.toLowerCase()) throw refuse("the rewording changed nothing");
+  return { text, cost: body.usage?.cost ?? 0 };
+}
+
 // `full` also works out the plotter stroke order and keeps the details the
 // lab page shows; the public site needs neither.
 async function draw(prompt, model, progress, full, aspect = ASPECTS.square) {
+  let subject = prompt;   // what the image model is asked for: the prompt, or its rewording
+  let extra = 0;          // what the rewording cost
   let lastError;
   for (let attempts = 1; attempts <= MAX_ATTEMPTS; attempts++) {
     try {
-      progress(attempts === 1 ? "Drawing the picture…" : `Drawing the picture again (attempt ${attempts})…`, attempts === 1 ? "picture" : "again");
-      const picture = await paint(model, prompt, aspect, full ? 240_000 : 60_000);
+      if (attempts === 1) progress("Drawing the picture…", "picture");
+      else if (!lastError.blocked) progress(`Drawing the picture again (attempt ${attempts})…`, "again");
+      const picture = await paint(model, subject, aspect, full ? 240_000 : 60_000);
       progress("Tracing the pen strokes…", "trace");
       const traced = await trace(picture.bytes, aspect.page);
       if (traced.stats.strokes < 40) throw new Error("the picture had too little line work to trace");
@@ -445,13 +490,26 @@ async function draw(prompt, model, progress, full, aspect = ASPECTS.square) {
         orderStrokes(traced.svg, false, PEN.draw, aspect.page),
         full ? orderStrokes(traced.svg, true, PEN.draw, aspect.page) : null,
       ]);
-      return { svg: { shape, plotter }, source: DRAW_PROMPT(prompt, aspect), picture: full ? picture.url : undefined, mode: "draw", model, attempts, revised: false, traced: traced.stats, cost: picture.cost };
+      return {
+        svg: { shape, plotter }, source: DRAW_PROMPT(subject, aspect), picture: full ? picture.url : undefined,
+        drew: subject === prompt ? undefined : subject,
+        mode: "draw", model, attempts, revised: false, traced: traced.stats, cost: (picture.cost ?? 0) + extra,
+      };
     } catch (err) {
+      lastError = err;
+      console.error(`attempt ${attempts} failed: ${err.message}`);
+      if (err.blocked) {
+        // Refused twice: the rewording was not acceptable either.
+        if (subject !== prompt) throw Object.assign(err, { code: "blocked" });
+        progress("Finding another way to draw it…", "reword");
+        const reworded = await reword(prompt);
+        subject = reworded.text;
+        extra = reworded.cost;
+        continue;
+      }
       // A rejected key, an empty balance or a provider limit will not get
       // better by asking again, and is not the visitor's doing.
       if ([401, 402, 403, 429].includes(err.upstream)) throw Object.assign(err, { code: "unavailable" });
-      lastError = err;
-      console.error(`attempt ${attempts} failed: ${err.message}`);
     }
   }
   throw new Error(`could not produce a drawing after ${MAX_ATTEMPTS} attempts: ${lastError.message}`);
@@ -538,6 +596,11 @@ const PAGES = {
   "/vendor/mp4-muxer.mjs": ["vendor/mp4-muxer.mjs", "text/javascript; charset=utf-8"],
   "/sample.svg": ["sample.svg", "image/svg+xml"],
   "/favicon.svg": ["favicon.svg", "image/svg+xml"],
+  "/favicon.ico": ["favicon.ico", "image/x-icon"],
+  "/apple-touch-icon.png": ["apple-touch-icon.png", "image/png"],
+  "/logo.svg": ["logo.svg", "image/svg+xml"],
+  "/og.png": ["og.png", "image/png"],
+  "/og-square.png": ["og-square.png", "image/png"],
   ...(LAB ? LAB_PAGES : {}),
 };
 const files = new Map();   // name -> { mtimeMs, body, gzipped, etag }
@@ -646,11 +709,11 @@ async function handleSketch(req, res) {
   inProgress++;
   try {
     const result = await sketch(prompt, mode, model, body.revise !== false, (stage, step) => emit(lab ? { stage, step } : { step }), lab, ASPECTS[aspect]);
-    emit({ result: lab ? { ...result, ms: Date.now() - started } : { svg: result.svg.shape } });
-    record({ ok: true, attempts: result.attempts, strokes: result.traced?.strokes, cost: result.cost });
+    emit({ result: lab ? { ...result, ms: Date.now() - started } : { svg: result.svg.shape, drew: result.drew } });
+    record({ ok: true, attempts: result.attempts, strokes: result.traced?.strokes, cost: result.cost, drew: result.drew });
   } catch (err) {
     console.error(err);
-    const code = err.code === "unavailable" ? "unavailable" : "failed";
+    const code = ["unavailable", "blocked"].includes(err.code) ? err.code : "failed";
     emit({ error: { code, message: lab ? err.message : MESSAGES[code]() } });
     record({ ok: false, error: err.message });
   } finally {
@@ -686,7 +749,7 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`sketch: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}  (draws with ${DEFAULT_IMAGE_MODEL})`);
+  console.log(`draws.ink: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}  (draws with ${DEFAULT_IMAGE_MODEL})`);
   if (!API_KEY) console.error("No OpenRouter key: set OPENROUTER_API_KEY. Drawing is switched off.");
   if (!existsSync(PYTHON_BIN) || !existsSync(VPYPE_BIN)) console.error("Missing .venv with vpype and the tracer's libraries: run `pnpm setup`. Drawing is switched off.");
   if (LAB) console.log(`lab mode: /lab and /designs are served, limits are off; do not expose publicly`);

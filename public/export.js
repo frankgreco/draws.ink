@@ -3,7 +3,7 @@
 const PAPER = [251, 250, 246];
 const INK = [31, 29, 26];
 const PEN = [210, 69, 47];
-const MARK = "sketch"; // small wordmark in the corner of the animations
+const MARK = "draws.ink"; // the site's name in the corner of the animations
 
 // Frames take the drawing's shape. A video's shorter side is 1080, which makes
 // tall and wide drawings 1080x1920 and 1920x1080; the bitrate is for a square
