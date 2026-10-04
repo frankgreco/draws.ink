@@ -1,0 +1,9 @@
+body { margin: 0; background: #efece4; color: #1c1b19; font: 16px/1.5 ui-sans-serif, system-ui, sans-serif; }
+main { max-width: 640px; margin: 0 auto; padding: 48px 20px; }
+h1 { font: 500 34px/1.1 "Iowan Old Style", Palatino, Georgia, serif; margin: 0 0 8px; }
+p { color: #76726a; margin: 0 0 24px; }
+ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+li a { display: grid; gap: 2px; padding: 14px 16px; background: #fff; border: 1px solid #d9d4c8; border-radius: 12px; color: inherit; text-decoration: none; }
+li a:hover { border-color: #76726a; }
+li span { color: #76726a; font-size: 14px; }
+a { color: inherit; }

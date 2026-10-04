@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch: say it, see it drawn</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/designs/5.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<div class="strip" aria-hidden="true"><span>Pen drawings from words &#10038; image &#10038; video &#10038; GIF &#10038; SVG &#10038; Pen drawings from words &#10038; image &#10038; video &#10038; GIF &#10038; SVG &#10038; Pen drawings from words &#10038; image &#10038; video &#10038; GIF &#10038; SVG &#10038; Pen drawings from words &#10038; image &#10038; video &#10038; GIF &#10038; SVG &#10038; </span><span>Pen drawings from words &#10038; image &#10038; video &#10038; GIF &#10038; SVG &#10038; Pen drawings from words &#10038; image &#10038; video &#10038; GIF &#10038; SVG &#10038; Pen drawings from words &#10038; image &#10038; video &#10038; GIF &#10038; SVG &#10038; Pen drawings from words &#10038; image &#10038; video &#10038; GIF &#10038; SVG &#10038; </span></div>
+<main>
+  <header><a class="mark" href="/designs/5">Sketch</a></header>
+  <h1>Say it.<br>See it <span>drawn.</span></h1>
+  <div class="cols">
+    <section class="panel">
+      <p class="lede">Type anything. A pen draws it line by line, and you keep the picture, the video or the plotter file.</p>
+      <form id="form" class="ask">
+      <label class="sr" for="prompt">What should the pen draw?</label>
+      <input id="prompt" name="prompt" type="text" maxlength="200" placeholder="a lighthouse on a rocky island" autocomplete="off" enterkeyhint="go">
+      <button id="go" type="submit">Draw</button>
+    </form>
+      <div class="ideas" id="ideas" role="group" aria-label="Ideas to try">
+      <button type="button">a cat on a bicycle</button>
+      <button type="button">a vintage typewriter</button>
+      <button type="button">a tree house with a rope ladder</button>
+      <button type="button">a hot air balloon over hills</button>
+      <button type="button">a sailing ship with three masts</button>
+    </div>
+    </section>
+    <section class="stage">
+      <figure class="sheet">
+      <span class="badge" aria-hidden="true">15<small>sec</small></span>
+      <div id="paper"></div>
+      <figcaption>
+        <span id="caption"></span>
+        <span class="actions" id="actions" hidden>
+          <button type="button" id="replay">Replay</button>
+          <span class="menu">
+            <button type="button" id="download" aria-haspopup="menu" aria-expanded="false" aria-controls="formats">Download</button>
+            <span id="formats" class="formats" role="menu" aria-label="Download as" hidden>
+              <button type="button" role="menuitem" data-format="png"><b>Image</b><small>PNG</small></button>
+              <button type="button" role="menuitem" data-format="mp4"><b>Video</b><small>MP4, for Reels and TikTok</small></button>
+              <button type="button" role="menuitem" data-format="gif"><b>GIF</b><small>for chats and web pages</small></button>
+              <button type="button" role="menuitem" data-format="svg"><b>Vector</b><small>SVG, for pen plotters</small></button>
+            </span>
+          </span>
+        </span>
+      </figcaption>
+      <p id="note" class="note" hidden></p>
+    </figure>
+    </section>
+  </div>
+</main>
+<p id="status" class="sr" role="status" aria-live="polite"></p>
+</body>
+</html>

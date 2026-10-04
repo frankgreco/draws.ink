@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch: type a sentence, get a pen plot</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/designs/2.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<header class="bar">
+  <a class="mark" href="/designs/2">SKETCH<span>/PLOT</span></a>
+  <span class="ready">Pen ready</span>
+</header>
+<main>
+  <section class="bed">
+    <figure class="sheet">
+      <div class="frame"><div id="paper"></div></div>
+      <figcaption>
+        <span id="caption"></span>
+        <span class="actions" id="actions" hidden>
+          <button type="button" id="replay">Replay</button>
+          <span class="menu">
+            <button type="button" id="download" aria-haspopup="menu" aria-expanded="false" aria-controls="formats">Download</button>
+            <span id="formats" class="formats" role="menu" aria-label="Download as" hidden>
+              <button type="button" role="menuitem" data-format="png"><b>Image</b><small>PNG</small></button>
+              <button type="button" role="menuitem" data-format="mp4"><b>Video</b><small>MP4, for Reels and TikTok</small></button>
+              <button type="button" role="menuitem" data-format="gif"><b>GIF</b><small>for chats and web pages</small></button>
+              <button type="button" role="menuitem" data-format="svg"><b>Vector</b><small>SVG, for pen plotters</small></button>
+            </span>
+          </span>
+        </span>
+      </figcaption>
+      <p id="note" class="note" hidden></p>
+    </figure>
+  </section>
+  <section class="console">
+    <p class="tag">Text &rarr; pen plot</p>
+    <h1>Type a sentence.<br>Get a pen plot.</h1>
+    <p class="lede">A pen draws whatever you describe, one stroke at a time. Take the result away as PNG, MP4, GIF or SVG.</p>
+    <form id="form" class="ask">
+      <label class="sr" for="prompt">What should the pen draw?</label>
+      <span class="chevron" aria-hidden="true">&gt;</span><input id="prompt" name="prompt" type="text" maxlength="200" placeholder="a lighthouse on a rocky island" autocomplete="off" enterkeyhint="go">
+      <button id="go" type="submit">Draw</button>
+    </form>
+    <div class="ideas" id="ideas" role="group" aria-label="Ideas to try">
+      <button type="button">a cat on a bicycle</button>
+      <button type="button">a vintage typewriter</button>
+      <button type="button">a tree house with a rope ladder</button>
+      <button type="button">a hot air balloon over hills</button>
+      <button type="button">a sailing ship with three masts</button>
+    </div>
+    <dl class="spec">
+      <div><dt>Output</dt><dd>PNG &middot; MP4 &middot; GIF &middot; SVG</dd></div>
+      <div><dt>Time</dt><dd>about 15 s</dd></div>
+      <div><dt>Sheet</dt><dd>square, 1:1</dd></div>
+    </dl>
+  </section>
+</main>
+<p id="status" class="sr" role="status" aria-live="polite"></p>
+</body>
+</html>

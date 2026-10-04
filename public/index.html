@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch: draw anything</title>
+<meta name="description" content="Describe anything and watch a pen draw it, line by line. Keep the drawing as an image, a video, a GIF, or an SVG for a pen plotter.">
+<meta property="og:title" content="Sketch: draw anything">
+<meta property="og:description" content="Describe anything and watch a pen draw it, line by line.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#f3efe6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="mark" href="/">sketch</a>
+</header>
+<main>
+  <section class="words">
+    <h1>Draw anything.</h1>
+    <form id="form" class="ask">
+      <label class="sr" for="prompt">What should the pen draw?</label>
+      <input id="prompt" name="prompt" type="text" maxlength="200" placeholder="a lighthouse on a rocky island" autocomplete="off" enterkeyhint="go">
+      <fieldset class="shapes">
+        <legend class="sr">Shape of the drawing</legend>
+        <label><input type="radio" name="aspect" value="square" checked><span><i class="square"></i>Square</span></label>
+        <label><input type="radio" name="aspect" value="tall"><span><i class="tall"></i>Tall</span></label>
+        <label><input type="radio" name="aspect" value="wide"><span><i class="wide"></i>Wide</span></label>
+      </fieldset>
+      <button id="go" type="submit">Draw</button>
+    </form>
+  </section>
+  <section class="work">
+    <figure class="sheet">
+      <div id="paper"></div>
+      <figcaption>
+        <span class="actions" id="actions" hidden>
+          <button type="button" id="replay">Replay</button>
+          <span class="menu">
+            <button type="button" id="download" aria-haspopup="menu" aria-expanded="false" aria-controls="formats">Download</button>
+            <span id="formats" class="formats" role="menu" aria-label="Download as" hidden>
+              <button type="button" role="menuitem" data-format="png"><b>Image</b><small>PNG</small></button>
+              <button type="button" role="menuitem" data-format="mp4"><b>Video</b><small>MP4, for Reels and TikTok</small></button>
+              <button type="button" role="menuitem" data-format="gif"><b>GIF</b><small>for chats and web pages</small></button>
+              <button type="button" role="menuitem" data-format="svg"><b>Vector</b><small>SVG, for pen plotters</small></button>
+            </span>
+          </span>
+        </span>
+      </figcaption>
+      <p id="note" class="note" hidden></p>
+    </figure>
+  </section>
+</main>
+<p id="status" class="sr" role="status" aria-live="polite"></p>
+<noscript><p class="noscript">Sketch needs JavaScript to draw.</p></noscript>
+</body>
+</html>

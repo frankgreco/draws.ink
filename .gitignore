@@ -1,0 +1,7 @@
+.venv/
+bin/
+out/
+node_modules/
+.dev.vars
+render/gen/
+__pycache__/

@@ -1,0 +1,10 @@
+(version 1)
+; Model-written scene programs run under this profile: no network, no file
+; writes, no reading the user's files, no child processes.
+(allow default)
+(deny network*)
+(deny file-write*)
+(deny process-fork)
+(deny process-exec)
+(deny file-read* (subpath "/Users"))
+(allow process-exec (literal (param "BIN")))

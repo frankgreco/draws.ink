@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketch: words in, pen drawing out</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/designs/1.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="mark" href="/designs/1">sketch</a>
+  <span class="kicker">Pen drawings, made to order</span>
+</header>
+<main>
+  <section class="words">
+    <h1>Words in.<br>Pen drawing out.</h1>
+    <p class="lede">Describe anything and watch a pen draw it, line by line. Keep it as an image, a video or a file for a pen plotter.</p>
+    <form id="form" class="ask">
+      <label class="sr" for="prompt">What should the pen draw?</label>
+      <input id="prompt" name="prompt" type="text" maxlength="200" placeholder="a lighthouse on a rocky island" autocomplete="off" enterkeyhint="go">
+      <button id="go" type="submit">Draw</button>
+    </form>
+    <div class="try">
+      <p class="label">Or start with one of these</p>
+      <div class="ideas" id="ideas" role="group" aria-label="Ideas to try">
+      <button type="button">a cat on a bicycle</button>
+      <button type="button">a vintage typewriter</button>
+      <button type="button">a tree house with a rope ladder</button>
+      <button type="button">a hot air balloon over hills</button>
+      <button type="button">a sailing ship with three masts</button>
+    </div>
+    </div>
+    <ol class="steps">
+      <li><b>Describe</b><span>One sentence is enough.</span></li>
+      <li><b>Watch</b><span>The pen draws it in front of you.</span></li>
+      <li><b>Keep</b><span>Image, video, GIF or SVG.</span></li>
+    </ol>
+  </section>
+  <section class="work">
+    <figure class="sheet">
+      <div id="paper"></div>
+      <figcaption>
+        <span id="caption"></span>
+        <span class="actions" id="actions" hidden>
+          <button type="button" id="replay">Replay</button>
+          <span class="menu">
+            <button type="button" id="download" aria-haspopup="menu" aria-expanded="false" aria-controls="formats">Download</button>
+            <span id="formats" class="formats" role="menu" aria-label="Download as" hidden>
+              <button type="button" role="menuitem" data-format="png"><b>Image</b><small>PNG</small></button>
+              <button type="button" role="menuitem" data-format="mp4"><b>Video</b><small>MP4, for Reels and TikTok</small></button>
+              <button type="button" role="menuitem" data-format="gif"><b>GIF</b><small>for chats and web pages</small></button>
+              <button type="button" role="menuitem" data-format="svg"><b>Vector</b><small>SVG, for pen plotters</small></button>
+            </span>
+          </span>
+        </span>
+      </figcaption>
+      <p id="note" class="note" hidden></p>
+    </figure>
+  </section>
+</main>
+<p id="status" class="sr" role="status" aria-live="polite"></p>
+</body>
+</html>

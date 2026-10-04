@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sketch lab</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --ink: #1b1b1b; --paper: #fbfaf6; --muted: #8a867c; --line: #dedad0; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: #efece4; color: var(--ink); font: 15px/1.4 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 28px 16px 48px; }
+  h1 { font-size: 18px; margin: 0 0 14px; font-weight: 600; }
+  form { display: flex; gap: 8px; }
+  select { padding: 9px 8px; font: inherit; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  input[type=text] { flex: 1; padding: 10px 12px; font: inherit; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+  button { padding: 10px 14px; font: inherit; border: 1px solid var(--ink); border-radius: 8px; background: var(--ink); color: #fff; cursor: pointer; }
+  button.quiet { background: transparent; color: var(--ink); border-color: var(--line); }
+  button:disabled { opacity: .45; cursor: default; }
+  #paper { margin-top: 16px; aspect-ratio: 1; background-color: var(--paper);
+    /* paper grain */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' seed='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.35  0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0.13 0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)'/%3E%3C/svg%3E");
+    box-shadow: 0 1px 2px rgba(60, 50, 30, .08), 0 8px 24px rgba(60, 50, 30, .08); border: 1px solid var(--line); border-radius: 10px; display: grid; place-items: center; overflow: hidden; }
+  #paper svg { width: 100%; height: 100%; }
+  #paper .hint { color: var(--muted); padding: 24px; text-align: center; }
+  #paper .error { color: #a4372b; }
+  .bar { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .bar label { color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  #status { margin-left: auto; color: var(--muted); font-size: 13px; }
+  details { margin-top: 14px; color: var(--muted); }
+  #picture { display: block; width: 260px; margin: 10px 0; border: 1px solid var(--line); border-radius: 8px; }
+  pre { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow: auto; max-height: 320px; font-size: 12px; color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+  <h1>sketch lab</h1>
+  <form id="form">
+    <input id="prompt" type="text" placeholder="a lighthouse on a rocky island" autocomplete="off" autofocus>
+    <select id="mode" title="Illustration: an image model draws it and the lines are traced. 3D: a language model builds a scene and ln renders it.">
+      <option value="draw">Illustration</option>
+      <option value="code">3D (Go code)</option>
+      <option value="json">3D (JSON)</option>
+    </select>
+    <select id="model" title="Model that makes the picture"></select>
+    <button id="go">Draw</button>
+  </form>
+  <div id="paper"><div class="hint">Describe something to draw.</div></div>
+  <div class="bar">
+    <button class="quiet" id="replay" disabled>Replay</button>
+    <button class="quiet" id="download" disabled>Download SVG</button>
+    <label>Order <select id="order">
+      <option value="shape">natural (main lines first)</option>
+      <option value="plotter">plotter (nearest next)</option>
+    </select></label>
+    <label id="reviseLabel" hidden title="Show the model its drawing and let it correct it. Slower."><input id="revise" type="checkbox" checked> Revise</label>
+    <label>Duration <input id="duration" type="range" min="3" max="60" value="30"> <span id="durationLabel">30s</span></label>
+    <span id="status"></span>
+  </div>
+  <details><summary>Source</summary><img id="picture" alt="The picture the strokes were traced from" hidden><pre id="scene"></pre></details>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const paper = $("paper");
+let current = null; // { svgText, strokes, pen, total }
+let drawings = null; // { plotter, shape } SVG text per stroke order
+let frame = 0;
+
+const NS = "http://www.w3.org/2000/svg";
+// Seconds of pen time per unit of line, relative to outlines.
+const PACE = { layer1: 1, layer2: 0.8, layer3: 0.45 };
+
+function mount(svgText) {
+  const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
+  const src = doc.documentElement;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", src.getAttribute("viewBox") ?? "0 0 1024 1024");
+  // A slight wobble so the lines look drawn by a pen, not a printer.
+  svg.innerHTML = `<defs><filter id="ink" x="-2%" y="-2%" width="104%" height="104%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="4"/>
+    <feDisplacementMap in="SourceGraphic" scale="2.4" xChannelSelector="R" yChannelSelector="G"/>
+  </filter></defs>`;
+  const ink = document.createElementNS(NS, "g");
+  ink.setAttribute("filter", "url(#ink)");
+  ink.setAttribute("fill", "none");
+  ink.setAttribute("stroke", "#1f1d1a");
+  ink.setAttribute("stroke-linecap", "round");
+  ink.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(ink);
+
+  // Layers arrive in drawing order: outlines, then detail, then shading.
+  const strokes = [];
+  const layers = [...src.querySelectorAll("g[id^=layer]")];
+  for (const layer of layers.length ? layers : [src]) {
+    const group = document.createElementNS(NS, "g");
+    group.setAttribute("stroke-width", layer.getAttribute("stroke-width") ?? "1.2");
+    ink.appendChild(group);
+    for (const el of layer.querySelectorAll("line, polyline, polygon, path")) {
+      const copy = group.appendChild(document.importNode(el, false));
+      strokes.push({ el: copy, pace: PACE[layer.id] ?? 1 });
+    }
+  }
+  const pen = document.createElementNS(NS, "circle");
+  pen.setAttribute("r", "5");
+  pen.setAttribute("fill", "#d2452f");
+  svg.appendChild(pen);
+  paper.replaceChildren(svg);
+
+  // Timeline in arbitrary units: travel to each stroke with the pen up, then
+  // draw it. A seeded jitter keeps replays identical.
+  let seed = 7;
+  const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  let clock = 0;
+  let at = null;
+  for (const s of strokes) {
+    s.length = s.el.getTotalLength();
+    s.from = s.el.getPointAtLength(0);
+    s.to = s.el.getPointAtLength(s.length);
+    s.el.style.strokeDasharray = `${s.length} ${s.length}`;
+    s.el.style.strokeDashoffset = s.length;
+    const hop = at ? Math.hypot(s.from.x - at.x, s.from.y - at.y) : 0;
+    s.travelFrom = at ?? s.from;
+    s.travelStart = clock;
+    clock += Math.min(hop / 5, 60) + (hop > 4 ? 12 : 0); // pen-up moves are quick, with a small lift pause
+    s.start = clock;
+    clock += (s.length + 14) * s.pace * (0.85 + 0.35 * random());
+    s.end = clock;
+    at = s.to;
+  }
+  return { svgText, strokes, pen, total: clock };
+}
+
+// Slow at both ends of a stroke, faster through the middle.
+const ease = (u) => u - Math.sin(2 * Math.PI * u) / (2 * Math.PI) * 0.55;
+
+function play() {
+  cancelAnimationFrame(frame);
+  const { strokes, pen, total } = current;
+  for (const s of strokes) s.el.style.strokeDashoffset = s.length;
+  pen.style.display = "";
+  const rate = total / (Number($("duration").value) * 1000); // timeline units per ms
+  let index = 0;
+  let clock = 0;
+  let last = performance.now();
+  const tick = (now) => {
+    clock += Math.min(now - last, 100) * rate;
+    last = now;
+    while (index < strokes.length && clock >= strokes[index].end) {
+      strokes[index].el.style.strokeDashoffset = 0;
+      index++;
+    }
+    if (index >= strokes.length) {
+      pen.style.display = "none";
+      return;
+    }
+    const s = strokes[index];
+    let p;
+    if (clock < s.start) {
+      const u = (clock - s.travelStart) / Math.max(s.start - s.travelStart, 1e-6);
+      p = { x: s.travelFrom.x + (s.from.x - s.travelFrom.x) * Math.min(u * 1.3, 1), y: s.travelFrom.y + (s.from.y - s.travelFrom.y) * Math.min(u * 1.3, 1) };
+      pen.setAttribute("fill-opacity", "0.35");
+    } else {
+      const done = s.length * ease((clock - s.start) / (s.end - s.start));
+      s.el.style.strokeDashoffset = s.length - done;
+      p = s.el.getPointAtLength(done);
+      pen.setAttribute("fill-opacity", "1");
+    }
+    pen.setAttribute("cx", p.x);
+    pen.setAttribute("cy", p.y);
+    frame = requestAnimationFrame(tick);
+  };
+  frame = requestAnimationFrame(tick);
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const prompt = $("prompt").value.trim() || $("prompt").placeholder;
+  $("go").disabled = true;
+  $("status").textContent = "Starting…";
+  try {
+    const res = await fetch("/api/sketch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lab: true, prompt, mode: $("mode").value, model: $("model").value, revise: $("revise").checked }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error.message);
+    // The server streams one JSON object per line: progress, then the result.
+    let data = null;
+    let buffer = "";
+    const started = Date.now();
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      for (const line of lines.filter(Boolean)) {
+        const event = JSON.parse(line);
+        if (event.error) throw new Error(event.error.message);
+        if (event.stage) $("status").textContent = `${event.stage} ${Math.round((Date.now() - started) / 1000)}s`;
+        if (event.result) data = event.result;
+      }
+    }
+    if (!data) throw new Error("the server closed the connection before finishing");
+    drawings = data.svg;
+    current = mount(drawings[$("order").value]);
+    $("scene").textContent = data.source;
+    $("picture").hidden = !data.picture;
+    if (data.picture) $("picture").src = data.picture;
+    $("status").textContent = `${current.strokes.length} strokes · ${(data.ms / 1000).toFixed(1)}s · ${data.model}` + (data.cost ? ` · $${data.cost.toFixed(2)}` : "") + (data.attempts > 1 ? ` · ${data.attempts} attempts` : "") + (data.revised ? " · revised" : "");
+    $("replay").disabled = $("download").disabled = false;
+    play();
+  } catch (err) {
+    cancelAnimationFrame(frame);
+    const box = document.createElement("div");
+    box.className = "hint error";
+    box.textContent = err.message;
+    paper.replaceChildren(box);
+    $("status").textContent = "";
+  } finally {
+    $("go").disabled = false;
+  }
+});
+
+// Illustration uses image models; the 3D modes use language models.
+let catalogue = null;
+function chooseMode() {
+  const draw = $("mode").value === "draw";
+  $("reviseLabel").hidden = draw;
+  if (!catalogue) return;
+  const { models, default: def } = catalogue[draw ? "draw" : "scene"];
+  $("model").replaceChildren(...models.map((m) => new Option(m.split("/")[1], m, m === def, m === def)));
+}
+$("mode").addEventListener("change", chooseMode);
+fetch("/api/models").then((r) => r.json()).then((data) => { catalogue = data; chooseMode(); });
+$("order").addEventListener("change", (e) => {
+  if (!drawings) return;
+  current = mount(drawings[e.target.value]);
+  play();
+});
+$("replay").addEventListener("click", () => current && play());
+$("duration").addEventListener("input", (e) => { $("durationLabel").textContent = `${e.target.value}s`; });
+$("duration").addEventListener("change", () => current && play());
+$("download").addEventListener("click", () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([current.svgText], { type: "image/svg+xml" }));
+  a.download = "sketch.svg";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+</body>
+</html>
