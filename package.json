@@ -10,7 +10,7 @@
     "start": "node server.mjs",
     "dev": "pnpm build && SKETCH_LAB=1 node server.mjs",
     "dev:worker": "wrangler dev",
-    "test": "node --test test/",
+    "test": "node --test \"test/**/*.test.mjs\"",
     "check": "node --check server.mjs && node --check shared.mjs && node --check src/worker.js && pnpm run test && wrangler deploy --dry-run",
     "deploy": "wrangler deploy"
   },
